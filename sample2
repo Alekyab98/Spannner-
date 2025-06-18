@@ -1,0 +1,78 @@
+from google.cloud import spanner
+
+# Initialize the Spanner client
+client = spanner.Client(project='vz-it-pr-jpuv-anpdo-0')
+
+# Specify the instance and database details
+instance_id = "anp-spanner-db"
+database_id = "wireline_churn"
+
+# Get the instance and database objects
+instance = client.instance(instance_id)
+database = instance.database(database_id)
+
+# Execute SQL to list all tables
+
+query = """
+CREATE TABLE ss_test_table 
+(
+col1 STRING(MAX) NOT NULL,
+col2 INT64
+) primary key (col2)
+"""
+query = """
+SELECT t.table_name
+FROM information_schema.tables AS t
+where t.table_name like '%ivapp_lkp%'
+"""
+
+with database.snapshot() as snapshot:
+    results = snapshot.execute_sql(query)
+    print("Tables in the database:")
+    for row in results:
+        print(row[0])
+
+# for db in instance.list_databases():
+#     print(db.name())
+
+print("running ddl")
+operation = database.update_ddl([query])
+operation.result()
+print("DONE")
+
+def insert_data(instance_id, database_id):
+    """Inserts sample data into the given database.
+
+    The database and table must already exist and can be created using
+    `create_database`.
+    """
+    spanner_client = spanner.Client()
+    instance = spanner_client.instance(instance_id)
+    database = instance.database(database_id)
+
+    with database.batch() as batch:
+        batch.insert(
+            table="Singers",
+            columns=("SingerId", "FirstName", "LastName"),
+            values=[
+                (1, "Marc", "Richards"),
+                (2, "Catalina", "Smith"),
+                (3, "Alice", "Trentor"),
+                (4, "Lea", "Martin"),
+                (5, "David", "Lomond"),
+            ],
+        )
+
+        batch.insert(
+            table="Albums",
+            columns=("SingerId", "AlbumId", "AlbumTitle"),
+            values=[
+                (1, 1, "Total Junk"),
+                (1, 2, "Go, Go, Go"),
+                (2, 1, "Green"),
+                (2, 2, "Forever Hold Your Peace"),
+                (2, 3, "Terrified"),
+            ],
+        )
+
+    print("Inserted data.")
