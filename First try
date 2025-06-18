@@ -1,0 +1,46 @@
+import pandas as pd
+from google.cloud import bigquery
+from datetime import datetime, timedelta
+
+# Initialize BigQuery client (uses default credentials from service account)
+client = bigquery.Client()
+
+# Load your CSV file
+input_csv = 'table_checks.csv'  # Replace with your actual file path
+df = pd.read_csv(input_csv)
+
+# Function to iterate through dates
+def date_range(start_date_str, end_date_str):
+    start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
+    end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
+    for n in range((end_date - start_date).days + 1):
+        yield start_date + timedelta(n)
+
+# Loop through each row in the CSV
+for index, row in df.iterrows():
+    table = row['table_name']
+    column = row['filter_column']
+    start_date = row['start_date']
+    end_date = row['end_date']
+
+    print(f"\nChecking table: {table}, column: {column}")
+    
+    for current_date in date_range(start_date, end_date):
+        formatted_date = current_date.strftime('%Y-%m-%d')
+        query = f"""
+            SELECT {column}
+            FROM `{table}`
+            WHERE {column} = '{formatted_date}'
+            LIMIT 1
+        """
+        try:
+            query_job = client.query(query)
+            results = query_job.result()
+            rows = list(results)
+
+            if rows:
+                print(f"{formatted_date}: YES")
+            else:
+                print(f"{formatted_date}: NO")
+        except Exception as e:
+            print(f"{formatted_date}: ERROR - {str(e)}")
