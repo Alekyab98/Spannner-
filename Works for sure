@@ -1,0 +1,53 @@
+import os
+import csv
+from datetime import datetime, timedelta
+from google.cloud import spanner
+
+input_csv_path = "/home/bilalal/input.csv"
+output_csv_path = "results.csv"
+
+spanner_client = spanner.Client()
+
+with open(input_csv_path, "r") as infile, open(output_csv_path, "w", newline="") as outfile:
+    reader = csv.DictReader(infile)
+    writer = csv.writer(outfile)
+    writer.writerow(["table_name", "filter_column", "date", "result"])
+
+    for row in reader:
+        table = row["table_name"].strip()
+        column = row["filter_column"].strip()
+        start_date = datetime.strptime(row["start_date"].strip(), "%m/%d/%Y").date()
+        end_date = datetime.strptime(row["end_date"].strip(), "%m/%d/%Y").date()
+
+        try:
+            project, instance_id, database_id, *table_parts = table.split(".")
+            table_name = ".".join(table_parts)
+        except Exception as e:
+            print(f"Invalid table name format: {table} — skipping...")
+            continue
+
+        instance = spanner_client.instance(instance_id)
+        database = instance.database(database_id)
+
+        current_date = start_date
+        while current_date <= end_date:
+            date_str = str(current_date)
+            query = f"""
+                SELECT {column}
+                FROM `{table_name}`
+                WHERE {column} = '{date_str}'
+                LIMIT 1
+            """
+            result = "no"
+            try:
+                with database.snapshot() as snapshot:
+                    results = list(snapshot.execute_sql(query))
+                    if results:
+                        result = "yes"
+            except Exception as e:
+                print(f"Error querying {table_name} on {date_str}: {e}")
+
+            writer.writerow([table, column, date_str, result])
+            current_date += timedelta(days=1)
+
+print("✅ Done. Results written to results.csv")
