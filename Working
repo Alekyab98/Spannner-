@@ -1,0 +1,49 @@
+import csv
+from datetime import datetime, timedelta
+from google.cloud import spanner
+
+# Set up Spanner details
+project = 'vz-it-np-jpuv-dev-anpdo-0'
+instance_id = 'anp-spanner-instance'
+
+input_csv = 'input.csv'
+output_csv = 'results.csv'
+
+client = spanner.Client(project=project)
+
+def daterange(start_date, end_date):
+    for n in range((end_date - start_date).days + 1):
+        yield start_date + timedelta(n)
+
+with open(output_csv, mode='w', newline='') as outfile:
+    writer = csv.writer(outfile)
+    writer.writerow(["table_name", "filter_column", "date", "result"])
+
+    with open(input_csv, mode='r') as infile:
+        reader = csv.DictReader(infile)
+        for row in reader:
+            table = row['table_name'].strip()
+            column = row['filter_column'].strip()
+            database_id = row['database'].strip()
+            start = datetime.strptime(row['start_date'].strip(), "%Y-%m-%d").date()
+            end = datetime.strptime(row['end_date'].strip(), "%Y-%m-%d").date()
+
+            instance = client.instance(instance_id)
+            database = instance.database(database_id)
+
+            with database.snapshot() as snapshot:
+                for date in daterange(start, end):
+                    date_str = date.strftime("%Y-%m-%d")
+                    query = f"""
+                        SELECT {column}
+                        FROM {table}
+                        WHERE {column} = '{date_str}'
+                        LIMIT 1
+                    """
+                    try:
+                        results = list(snapshot.execute_sql(query))
+                        result_flag = "YES" if results else "NO"
+                    except Exception as e:
+                        result_flag = f"ERROR: {e}"
+
+                    writer.writerow([table, column, date_str, result_flag])
