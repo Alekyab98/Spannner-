@@ -1,0 +1,48 @@
+import os
+import csv
+from datetime import datetime, timedelta
+from google.cloud import spanner
+
+# ✅ Set credentials and project ID explicitly
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "/usr/apps/dtwindo_dev/.keys/sa-dev-gudv-app-dtwndo-0-oidc-25321-config.json"
+project_id = "vz-it-np-jpuv-dev-anpdo-0"
+instance_id = "anp-spanner-instance"
+
+# ✅ Initialize Spanner client
+client = spanner.Client(project=project_id)
+instance = client.instance(instance_id)
+
+# ✅ Read input CSV and run validation
+input_file = "input.csv"
+output_file = "output.csv"
+
+with open(input_file, newline="") as infile, open(output_file, "w", newline="") as outfile:
+    reader = csv.DictReader(infile)
+    writer = csv.writer(outfile)
+    writer.writerow(["table_name", "filter_column", "date", "result"])
+
+    for row in reader:
+        table = row["table_name"].strip()
+        column = row["filter_column"].strip()
+        start_date = datetime.strptime(row["start_date"].strip(), "%m/%d/%Y").date()
+        end_date = datetime.strptime(row["end_date"].strip(), "%m/%d/%Y").date()
+        db_name = table.split(".")[2]  # Extract database name from full path
+
+        database = instance.database(db_name)
+
+        current_date = start_date
+        while current_date <= end_date:
+            date_str = current_date.isoformat()
+            query = f"SELECT {column} FROM {table} WHERE {column} = '{date_str}' LIMIT 1"
+
+            try:
+                with database.snapshot() as snapshot:
+                    results = list(snapshot.execute_sql(query))
+                    result = "YES" if results else "NO"
+            except Exception as e:
+                result = f"ERROR: {str(e)}"
+
+            writer.writerow([table, column, date_str, result])
+            current_date += timedelta(days=1)
+
+print("✅ Done! Results written to output.csv")
