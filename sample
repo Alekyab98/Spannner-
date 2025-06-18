@@ -1,0 +1,20 @@
+import os
+from google.cloud import spanner
+def execute_ddl(db,query):
+    os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = "/usr/apps/dtwindo_prd/.sak/sa-pr-gudv-app-dtwndo-0_key.json"
+    project = 'vz-it-pr-jpuv-anpdo-0'
+    instance_id = "anp-spanner-db"
+    client = spanner.Client(project=project)
+    instance = client.instance(instance_id)
+    database = instance.database(db)
+    for i in query:
+        try:
+            operation = database.update_ddl([i])
+            operation.result()
+            print("Operation successful!")
+        except Exception as e:
+            print(f"Error running sql: {str(e)}")
+
+network_wls_model_db =  "network_wls_model"
+network_wls_curated_db = "network_wls_curated" 
+wireline_churn_db = "wireline_churn"
