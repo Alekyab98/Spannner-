@@ -1,0 +1,133 @@
+import csv
+import argparse
+from datetime import date, timedelta
+from google.cloud import spanner
+
+def daterange(start_date, end_date):
+    """Generator for dates in a range (inclusive)."""
+    for n in range(int((end_date - start_date).days) + 1):
+        yield start_date + timedelta(n)
+
+def get_dates_in_range(start_date_str, end_date_str):
+    
+    try:
+        start_date = date.fromisoformat(start_date_str)
+        end_date = date.fromisoformat(end_date_str)
+    except ValueError:
+        return "Error: Please provide dates in YYYY-MM-DD format."
+
+    dates = []
+    current_date = start_date
+    while current_date <= end_date:
+        dates.append(current_date.strftime('%Y-%m-%d'))
+        current_date += timedelta(days=1)
+    return dates
+
+
+def check_spanner_data(project, instance_id, db_name, table_name, filter_col, check_date):
+    """
+    Checks if data exists in a Spanner table for a specific date.
+
+    Args:
+        instance_id (str): The ID of the Spanner instance.
+        database_id (str): The ID of the Spanner database.
+        db_name (str): The name of the database (for context, not connection).
+        table_name (str): The name of the table to query.
+        filter_col (str): The name of the date/timestamp column to filter on.
+        check_date (date): The date to check for data.
+
+    Returns:
+        str: 'Yes' if data is found, 'No' otherwise.
+    """
+#     project = "vz-it-np-jpuv-dev-anpdo-0"
+    database_id = db_name
+    spanner_client = spanner.Client(project=project)
+    instance = spanner_client.instance(instance_id)
+    database = instance.database(database_id)
+
+    # Format date for the query
+    filter_dt = check_date
+
+    query = (
+        f"SELECT {filter_col} FROM {table_name} "
+        f"WHERE {filter_col} = '{check_date}' LIMIT 5"
+    )
+    
+    print(query)
+
+    params = {"filter_dt": check_date}
+#     param_types = {"filter_dt": spanner.param_types.DATE}
+
+
+    try:
+        with database.snapshot() as snapshot:
+            results = snapshot.execute_sql(
+                query,
+#                 params=params,
+            )
+            # If the iterator has any rows, data is available
+            for row in results:
+                return 'Yes'
+            return 'No'
+    except Exception as e:
+        print(f"An error occurred for {db_name}.{table_name} on {filter_dt}: {e}")
+        return 'Error'
+
+
+def main():
+    """
+    Main function to process the CSV and check for data in Spanner.
+    """
+    parser = argparse.ArgumentParser(description="Check for data availability in Spanner tables.")
+    parser.add_argument("input_csv", help="Path to the input CSV file.")
+    parser.add_argument("start_date", help="Start date in YYYY-MM-DD format.")
+    parser.add_argument("end_date", help="End date in YYYY-MM-DD format.")
+    parser.add_argument("instance_id", help="Google Cloud Spanner instance ID.")
+    parser.add_argument("project_id", help="Google Cloud Spanner database ID.")
+    args = parser.parse_args()
+
+    try:
+        start_date = args.start_date
+        end_date = args.end_date
+    except ValueError:
+        print("Error: Dates must be in YYYY-MM-DD format.")
+        return
+
+    output_csv = '/shailendra/spanner_data_availability_checker_output.csv'
+
+    with open(args.input_csv, 'r', newline='') as infile, \
+         open(output_csv, 'w', newline='') as outfile:
+
+        reader = csv.DictReader(infile)
+        fieldnames = reader.fieldnames + ['date', 'data_available']
+        writer = csv.DictWriter(outfile, fieldnames=fieldnames)
+        writer.writeheader()
+
+        for row in reader:
+            db_name = row['db_name']
+            table_name = row['table_name']
+            filter_col = row['filter_col']
+
+            print(f"Processing {db_name}.{table_name}...aaa")
+            dts = get_dates_in_range(start_date, end_date)
+            print(dts)
+
+            for single_date in dts:
+                data_available = check_spanner_data(
+                    args.project_id,
+                    args.instance_id,
+                    db_name,
+                    table_name,
+                    filter_col,
+                    single_date
+                )
+
+                output_row = row.copy()
+                output_row['date'] = single_date
+                output_row['data_available'] = data_available
+                writer.writerow(output_row)
+
+    print(f"\nProcessing complete. Results saved to {output_csv}")
+
+if __name__ == '__main__':
+    main()
