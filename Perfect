@@ -28,7 +28,7 @@ def check_spanner_data_batch(project, instance_id, db_name, table_name, filter_c
     database = instance.database(db_name)
 
     union_query = "\nUNION ALL\n".join([
-        f"SELECT '{dt}' AS check_date, EXISTS (SELECT 1 FROM {table_name} WHERE {filter_col} = '{dt}' LIMIT 1) AS has_data"
+        f"SELECT '{dt}' AS check_date, EXISTS (SELECT 1 FROM {table_name} WHERE date(tiemstamp(<filter_col>),'utc') = '{dt}' LIMIT 1) AS has_data"
         for dt in date_list
     ])
 
